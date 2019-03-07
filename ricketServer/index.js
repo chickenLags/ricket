@@ -22,14 +22,19 @@ app.use(cors({
 
 var API = require('./API')
 
-app.get('/', (req, res) => res.send('Hello World!'))
+//app.get('/', (req, res) => res.send('Hello World!'))
+
+app.get('/', async(req, res) => {
+  console.log(req.headers)
+})
 
 //app.get('/users', async (req, res) => { const q = { text: "select * from users" } var result = await db.pool.query(q) res.json(result.rows) })
 
 app.get('/login', async (req, res) => {
   //renders error when the login credentials weren't sent at all or partly.
   if (req.body == undefined ) return res.json({token: false, error: "no body at all"})
-  if (req.body.username == undefined || req.body.password == undefined) return res.json({token: false, error: "username or password not sent"})
+  if (!req.body.username) return res.json( {token: false, error: "no username sent in body."} )
+  if (!req.body.password) return res.json( {token: false, error: "no password sent in body."} )
 
   //queries db for user
   const q = {text: "select * from users where username = $1 and password = $2", values: [req.body.username, req.body.password] }  
@@ -37,7 +42,7 @@ app.get('/login', async (req, res) => {
 
   //checking whether user exists in db. and whether token already exists. then returns token or error.
   if (result.rowCount == 1) {
-    var myToken = (token.byUsername(req.body.username)) ? token.byUsername(req.body.username) : token.generateToken(result.rows[0]);
+    var myToken = token.generateToken(result.rows[0]);
     return res.json({token: myToken, error: false})
   }else if(result.rowCount > 1)   return res.json({token: false, error: "somehow more than one user with these credentials in database."})
   else res.json({token: false, error: "Wrong username or password"})
