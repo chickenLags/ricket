@@ -30,7 +30,8 @@ router.post('/', function (req, res) {
 
 router.get('/tickets', async (req, res) => {
   //gets the URI arguments
-  var keys = Object.keys(req.query); var values = Object.values(req.query); //console.log(keys); console.log(values);
+  var keys = Object.keys(req.query)
+  var values = Object.values(req.query)
   
   //query db for all tickets
   const q = { text: "select * from tickets where owner = $1", values: [token.byToken(req.body.token).id] }
@@ -46,16 +47,16 @@ router.get('/tickets', async (req, res) => {
 router.post('/tickets', async (req, res) => {
 
   // check whether all info in body:
-  if (req.body.name == undefined || req.body.archtype == undefined || req.body.subtype) return res.json({ticket: false, error: "name, archtype or subtype is missing"}) 
+  if (req.body == undefined || req.body.name == undefined) return res.json({ticket: false, error: "name is missing"}) 
   var shared = (req.body.shared == undefined) ? false : req.body.shared;
   var due = (req.body.due == undefined) ? Date.now() : req.body.due;
 
   // CHECK: does the Date.now give the correct date? 
 
-  // ticket contains = id, date, name, archtype, subtype, shared, closed, owner, due. 
+  // ticket contains = id, date, name, shared, closed, owner, due. 
   const q = {
-    text: "INSERT INTO tickets (name, archtype, subtype, shared, due) values ( $1, $2, $3, $4, $5)",
-    values: [req.body.name, req.body.archtype, req.body.subtype, shared, due]
+    text: "INSERT INTO tickets (name, shared, due) values ( $1, $2, $3)",
+    values: [req.body.name, shared, due]
   }
 
   var result = await db.pool.query(q);
@@ -86,21 +87,21 @@ router.get('/tickets/:ticketId', async (req, res) => {
 
 //ERRORCHECK THIS BOII
 router.put('/tickets/:ticketId', async(req, res) => {
-  // ticket contains = id, date, name, archtype, subtype, shared, closed, owner, due. 
+  // ticket contains = id, date, name, shared, closed, owner, due. 
   // CHECK: does not take into account who da owner
   
   // obtain keys and values. 
-  var keys = Object.keys(req.body); var values = Object.values(req.body); //console.log(keys); console.log(values);
+  var keys = Object.keys(req.body.ticket); var values = Object.values(req.body.ticket); //console.log(keys); console.log(values);
 
   // adds in the column names and new values that need to be changed. 
   var sets = []
   for(var i = 0; i < keys.length; i++){ if (keys[i] != "id" && keys[i] != "token"){  sets.push(keys[i] + " = " + values[i]) } }
-  sets.join(", ")
+  sets = sets.join(", ")
 
 
   //DOES THIS WORK? the sets in the middle without using values? 
   // update db.
-  const q = { text: "UPDATE tickets SET " + sets + " WHERE id = $1",  values: [req.params.ticketId] }
+  const q = { text: "UPDATE tickets SET " + sets + " WHERE id = $1 AND owner = $2",  values: [req.params.ticketId, token.byToken(req.body.token).id] }
   var result = await db.pool.query(q)
 
   // WHAT DOES RESULT EVEN RETURN? 
@@ -235,102 +236,6 @@ router.get('/goals/:goalId/tickets', async (req, res) => {
 
 
 }) 
-
-//ERRORCHECK THIS BOII
-router.get('/archtypes', async (req, res) => { 
-  //this function returns the available types from the db. 
-  const q = {
-    text: "SELECT * FROM archtypes"
-  }
-  var result = await db.pool.query(q)
-
-  if (result.rowCount > 0) return res.json({result: result.rows, error: false})
-  return res.json({result: result, error: "no rows returned! table is empty or other error occured."})
-}) 
-
-//ERROCHECK THIS BOII
-router.post('/archtypes', async (req, res) => {
-  //this function should create a new type in the types table
-  // subtypes contains: id, name, description
-
-  // checks whether all params are sent:
-  if (req.body == undefined || req.body.name == undefined || req.body.description == undefined) return res.json({error: "not all parameters (name and description) were sent."})
-
-  const q = {
-    text: "INSERT INTO archtypes (name, description) VALUES ($1, $2)",
-    values: [req.body.name, req.body.description]
-  }
-  var result = await db.pool.query(q)
-
-  if (result.rowCount > 0) return res.json({result: result.rows, error: false})
-  return res.json({result: result, error: "no rows returned! is this normal? how do i know it  was succes?."})
-
- }) 
-
- //ERRORCHECK THIS BOII
-router.get('/subtypes', async (req, res) => { 
-  //this function returns the available types from the db. 
-  const q = {
-    text: "SELECT * FROM subtypes"
-  }
-  var result = await db.pool.query(q)
-
-  if (result.rowCount > 0) return res.json({result: result.rows, error: false})
-  return res.json({result: result, error: "no rows returned! table is empty or other error occured."})
-}) 
-
-//ERRORCHECK THIS BOII
-router.post('/subtypes', async (req, res) => {
-  //this function should create a new type in the types table
-  // subtypes contains: id, name, description
-
-  // checks whether all params are sent:
-  if (req.body == undefined || req.body.name == undefined || req.body.description == undefined) return res.json({error: "not all parameters (name and description) were sent."})
-
-  const q = {
-    text: "INSERT INTO subtypes (name, description) VALUES ($1, $2)",
-    values: [req.body.name, req.body.description]
-  }
-  var result = await db.pool.query(q)
-
-  if (result.rowCount > 0) return res.json({result: result.rows, error: false})
-  return res.json({result: result, error: "no rows returned! is this normal? how do i know it  was succes?."})
- }) 
-
-//ERRORCHECK THIS BOII
-router.put('/archtypes/:typeId', async (req, res) => { 
-  //this function changes a certain archtype
-  // archtypes contain: id, name, description
-
-  // checks whether all params are sent:
-  if (req.body == undefined || req.body.name == undefined || req.body.description == undefined) return res.json({error: "not all parameters (name and description) were sent."})
-
-  const q = {
-    text: "UPDATE archtypes SET name = $1, description = $2 WHERE id = $3",
-    values: [req.body.name, req.body.description, req.params.typeId]
-  }
-  var result = await db.pool.query(q)
-
-  // renders
-  if (result.rowCount > 0) return res.json({result: result.rows, error: false})
-  return res.json({result: result, error: "no rows returned! is this normal? how do i know it  was succes?."})
-})
-
-//ERRORCHECK THIS BOII
-router.get('/updates/:ticketId', async (req, res) => { 
-  //this function returns all the updates associated with a ticketID
-  // limit to owner? then i should also inner join on tickets following should work:
-  // SELECT * FROM ticketupdates tu INNER JOIN updates u ON tu.updateid = u.id INNER JOIN tickets t ON t.id = tu.ticketid WHERE tu.ticketid = $1 AND t.owner = $2
-
-  const q = {
-    text: "SELECT * FROM ticketupdates tu INNER JOIN updates u ON tu.updateid = u.id WHERE tu.ticketid = $1",
-    values: [req.params.ticketId]
-  }
-  var result = await db.pool.query(q)
-
-  if (result.rowCount > 0) return res.json({result: result.rows, error: false})
-  return res.json({result: result, error: "no rows returned! db empty, no match or error in code."})
-})
 
 //ERRORCHECK THIS BOII
 router.post('/updates/:ticketId', async (req, res) => {
