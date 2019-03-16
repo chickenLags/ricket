@@ -13,7 +13,7 @@ class Token{
     generateToken(user){
         // checks whether user already known and returns if so
         var token = this.byUsername(user.username)
-        if (token) return token
+        if (token) return token.token
 
         //generates token an finally returns it. 
         var b = [];  

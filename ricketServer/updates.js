@@ -5,43 +5,50 @@ var token = require('./classes/token')
 var db = require('./classes/db')
 
 
-
-//ERRORCHECK THIS BOII
+// returns all updates of this specific ticket.
 router.get('/:ticketId', async (req, res) => {
-    res.json({result: "hello not made yes updates", error: false})
+
+  const q = {
+    text: "SELECT * FROM updates \
+           WHERE ticketId = $1 \
+           AND EXISTS( \
+              SELECT * FROM tickets \
+              WHERE owner = $2 \
+           )",
+    values: [req.params.ticketId, token.byToken(req.headers.token).id]
+  }
+
+  db.pool.query(q).then(result => {
+    res.json({updates: result.rows, error: false})
+  }).catch(result => {
+    res.json({result: result, error: "Error occured when retrieving updates of this ticket."})
+  })
+    
 })
 
-//ERRORCHECK THIS BOII
+
+// adds an update to updates
 router.post('/:ticketId', async (req, res) => {
-    //this function adds an entry to ticketupdates
-    // it creates a update first, then uses its id to enter it into the ticket update table. 
-    // updates contains: id, date, body, change
+    // updates contains: id, date, body, change, ticketid
   
-    // do i have all info?
-    if (req.body == undefined || req.body.body == undefined) return res.json({ result: false, error: "error: body (description) is missing" })
+    // do i have all info? 
+    if (req.body == undefined ) return res.json({ result: false, error: "error: body (description) is missing" })
+    if (req.body.body == undefined) return res.json({ result: false, error: "error: body (description) is missing" })
     var change = (req.body.change == undefined) ? false : true;
-    var date = (req.body.date == undefined) ? Date.now() : req.body.date;
-  
+    //var date = new Date().toISOString().slice(0, 10)
+
   
     const q = {
-      text: "INSERT INTO updates (date, body, change) VALUES ($1, $2, $3)",
-      values: [date, req.body.body, change]
+      text: "INSERT INTO updates (body, change, ticketid) VALUES ($1, $2, $3) RETURNING * ",
+      values: [req.body.body, change, req.params.ticketId]
     }
-  
-    var result = await db.pool.query(q)
-  
-    //DOES THIS CHECK FOR SUCCES?
-    if (result) {
-      const q2 = {
-        text: "INSERT INTO ticketupdates (ticketid, updateid) VALUES ($1, $2)",
-        values: [req.params.ticketId, 0] // WHAT DO I EVEN PUT HERE??
-      }
-  
-      var result2 = await db.pool.query(q)
-    }
-  
-    if (result2) return res.json({ result: result, result2: result2, error: false, msg: "pay attention to return values. to fix the if statements in code!" })
-    return res.json({ result: result, result2: result2, error: "pay attention to return values. to fix the if statements in code!" })
+
+    db.pool.query(q).then(result => {
+      res.json({ updates: result.rows, error: false})
+    }).catch(result => {
+      res.json({ update: result, error: "Error occured when adding update."})
+    })
+
   })
 
   module.exports = router

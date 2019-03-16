@@ -10,42 +10,58 @@ var bodyParser = require('body-parser');
 
 //enables cors
 app.use(cors({
-    'allowedHeaders': ['sessionId', 'Content-Type'],
+    'allowedHeaders': ['sessionId', 'Content-Type', 'token'],
     'exposedHeaders': ['sessionId'],
     'origin': '*',
     'methods': 'GET,HEAD,PUT,PATCH,POST,DELETE',
     'preflightContinue': false
-  }));
+}))
+
+
+app.use( (req, res, next) => {
+  console.log("received headers: " + JSON.stringify(req.headers))
+  console.log("received body: " + req.body)
+  console.log("received params: " + JSON.stringify(req.params))
+  console.log("received message on: " + new Date().toISOString())
+  next()
+})
+
+
 
   app.use(bodyParser())
 
 
 var API = require('./API')
 
-//app.get('/', (req, res) => res.send('Hello World!'))
 
-app.get('/', async(req, res) => {
-  console.log(req.headers)
-})
+
 
 //app.get('/users', async (req, res) => { const q = { text: "select * from users" } var result = await db.pool.query(q) res.json(result.rows) })
-
-app.get('/login', async (req, res) => {
+// returns token for the loginer. 
+// PARAMS: body.password, body.username
+app.post('/login', async (req, res) => {
+  console.log("getting into the LOGIN path.")
   //renders error when the login credentials weren't sent at all or partly.
   if (req.body == undefined ) return res.json({token: false, error: "no body at all"})
   if (!req.body.username) return res.json( {token: false, error: "no username sent in body."} )
   if (!req.body.password) return res.json( {token: false, error: "no password sent in body."} )
 
   //queries db for user
-  const q = {text: "select * from users where username = $1 and password = $2", values: [req.body.username, req.body.password] }  
-  var result = await db.pool.query(q)
+  const q = {
+    text: "select * from users where username = $1 and password = $2", 
+    values: [req.body.username, req.body.password] 
+  } 
 
-  //checking whether user exists in db. and whether token already exists. then returns token or error.
-  if (result.rowCount == 1) {
-    var myToken = token.generateToken(result.rows[0]);
-    return res.json({token: myToken, error: false})
-  }else if(result.rowCount > 1)   return res.json({token: false, error: "somehow more than one user with these credentials in database."})
-  else res.json({token: false, error: "Wrong username or password"})
+  db.pool.query(q).then(result => {
+    if (result.rowCount == 1) {
+      var myToken = token.generateToken(result.rows[0]);
+      res.json({token: myToken, error: false})
+    }else {
+      res.json({token:result, error: "wrong username or password"})
+
+  }}).catch(result => {
+    res.json( {result: result, error: "Error occured in logging in" })
+  })
 
 })
 
