@@ -18,10 +18,12 @@ router.use(function hasLoggedIn(req, res, next) {
 var tickets = require('./tickets')
 var goals = require('./goals')
 var updates = require('./updates')
+var subjects = require('./subjects')
 
 router.use('/tickets', tickets)
 router.use('/goals', goals)
 router.use('/updates', updates)
+router.use('/subjects', subjects)
 
 
 

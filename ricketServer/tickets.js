@@ -13,8 +13,10 @@ var db = require('./classes/db')
 router.get('/', async (req, res) => {
 
     //returns tickets where requestor the owner or when he is in ticketshares.userid
-    const q = { text: "select distinct t.* from tickets t LEFT JOIN ticketshares ts ON t.id = ts.ticketid where t.owner = $1 OR ts.userid =$2",
-                values: [token.byToken(req.headers.token).id, token.byToken(req.headers.token).id] }
+    const q = { text: " SELECT DISTINCT t.* FROM tickets t LEFT JOIN ticketshares ts ON t.id = ts.ticketid \
+                        WHERE (t.owner = $1 OR ts.userid =$2) \
+                        AND t.closed=$3",
+                values: [token.byToken(req.headers.token).id, token.byToken(req.headers.token).id, false] }
     var result = await db.pool.query(q)
 
     if (result.rowCount >= 0) return res.json({ tickets: result.rows, error: false });
@@ -26,29 +28,23 @@ router.get('/', async (req, res) => {
 // INPUT: req.body: ticket.name, ticket.body, 
 // OPTIONAL: ticket.due, ticket.goalid
 router.post('/', async (req, res) => {
-
     // check whether all info in body:
-    // ticket contains = id, date, name, shared, closed, owner, due, body. 
     if (!req.body)                  return res.json({ ticket: false, error: "Body is missing completely."})
     if (!req.body.ticket)           return res.json({ ticket: false, error: "ticket is missing completely."})
     if (!req.body.ticket.name)      return res.json({ ticket: false, error: "name is missing" })
     if (!req.body.ticket.body)      return res.json({ ticket: false, error: "name is missing" })
-
     // consolidate all info into ticket var
     var ticket =  req.body.ticket
-    ticket.due = (!req.body.ticket.due)   ?    new Date().toISOString().slice(0,10)   : req.body.ticket.due;
+    ticket.due = (!req.body.ticket.due)   ?    Date.now()   : req.body.ticket.due;
     ticket.goalid = (!req.body.ticket.goalid) ? null : req.body.ticket.goalid
-
+    ticket.date = Date.now()
     // querrying hard
-    const q = { text: "INSERT INTO tickets (name, body, due, owner, goalid) values ( $1, $2, $3, $4, $5) returning *",
-                values: [ticket.name, ticket.body, ticket.due, token.byToken(req.headers.token).id, ticket.goalid] 
+    const q = { text: "INSERT INTO tickets (name, body, due, owner, goalid, date) values ($1, $2, $3, $4, $5, $6) returning * ",
+                values: [ticket.name, ticket.body, ticket.due, token.byToken(req.headers.token).id, ticket.goalid, ticket.date] 
               }
-    var result = await db.pool.query(q).catch(error => console.log("query failed for some reason." + JSON.stringify(error)))
-
-    //rendering
-    if (result.rowCount == 1) return res.json({ ticket : result.rows, error:false })
-    return res.json( {result: result, error: "something went wrong with the insert. see console log. POST ./API/tickets/:ticketId"})
-
+    db.pool.query(q)
+        .then( result => {res.json({tickets: result.rows, error: false }) })
+        .catch(result => {res.json({tickets: result, error: "Posting ticket failed"}) })
 })
 
 // Gets a single ticket matching thhe id. which contains: id, date, name, shared, closed, owner, due, and body and
@@ -131,7 +127,6 @@ router.put('/due/:ticketId', async (req, res) => {
     // validate required vars
     if(! req.body) return res.json({error: "no body was sent"})
     if(! "due" in req.body) return res.json({error: "no new due date was given."})
-
     //LOGIC 
     // update tickets due date 
     // IF i am owner or ticket is shared to me.
@@ -145,21 +140,13 @@ router.put('/due/:ticketId', async (req, res) => {
         RETURNING *",
         values: [req.body.due, req.params.ticketId, token.byToken(req.headers.token).id]
     }
-
-    db.pool.query(q).then(result => {
-        res.json({tickets: result.rows, due: req.body.due, error: false}) 
-    }).catch(result => {
-        res.json({ result: result, due: req.body.due, error: "query failed."})
-    })
+    db.pool.query(q).then(result => {res.json({tickets: result.rows, due: req.body.due, error: false}) })
+                    .catch(result => {res.json({ result: result, due: req.body.due, error: "query failed."}) })
 })
 
 // changes ticket.closed in accordance
 // PARAMS req.body.closed
 router.put('/close/:ticketId', async (req, res) =>{
-    //validate vars
-    if (! req.body ) return res.json({ error: "there was no body supplied"})
-    if (! "closed" in req.body) return res.json({ error: "there was no closed boolean supplied"})
-
     //LOGIC:
     // change closed in tickets to given var
     // IF queror owns ticket or is shared to
@@ -170,59 +157,59 @@ router.put('/close/:ticketId', async (req, res) =>{
                     SELECT * FROM tickets t LEFT JOIN ticketshares ts ON t.id = ts.ticketid \
                     WHERE t.id = $2 AND (t.owner = $3 or ts.userid = $3 ) )\
                 RETURNING *",
-        values: [req.body.closed, req.params.ticketId, token.byToken(req.headers.token).id]
+        values: [true, req.params.ticketId, token.byToken(req.headers.token).id]
+    }
+    db.pool.query(q).then(result => {res.json({ tickets: result.rows, error: false} ) })
+                    .catch(result => {res.json({ tickets: result, error: "Query failed for some reason."}) })
+})
+
+router.delete('/:ticketId', async(req, res) => {
+    const q = {
+        text: "DELETE FROM tickets \
+                WHERE id = $1 \
+                AND EXISTS( \
+                    SELECT * FROM tickets t LEFT JOIN ticketshares ts ON t.id = ts.ticketid \
+                    WHERE t.id = $1 AND (t.owner = $2 or ts.userid = $2) \
+                )",
+        values: [req.params.ticketId, token.byToken(req.headers.token).id]
     }
 
     db.pool.query(q).then(result => {
-        res.json({ tickets: result.rows, closed: req.body.closed, error: false} )
-    }).catch(result => {
-        res.json({ tickets: result, error: "Query failed for some reason."})    
+        res.json({ tickets: result.rows, error: false })
+    }).catch(result =>{
+        res.json({tickets: result, error: "Delete of ticket failed"})
     })
-
 })
 
 // should change the goalid of specified ticket in goaltickets.
 // PARAMS: req.body.goalid
-router.put('/changegoal/:ticketId', async (req, res) => {
-    //assure variabels in body
-    if(! req.body) return res.json({ error: "no body!"})
-    if(! "goalid" in req.body) return res.json({ error: "no goalId in body!"})
-
+router.put('/setgoal/:goalid', async (req, res) => {
     //LOGIC:
-    // update goalid in specified tickets 
+    // update goalid in specified ticket 
     // IF queror is (shared) owner of ticket
-    const q = {
-        text: " UPDATE tickets SET goalid = $1 \
-                WHERE id = $2 \
-                AND EXISTS(\
-                    SELECT * FROM tickets t LEFT JOIN ticketshares ts ON t.id = ts.ticketid \
-                    WHERE t.id = $2 AND ( t.owner = $3 OR ts.userid = $3 ) )\
-                RETURNING * ",
-        values: [req.body.goalid, req.params.ticketId, token.byToken(req.headers.token).id]
+    var params = req.body.ticketids
+    var todo = ''
+    for(var count = 2; count < params.length + 2; count++){
+        if (count > 2) todo = todo.concat(', ')
+        todo = todo.concat("$", count.toString())
     }
-    
-    db.pool.query(q).then(result => {
-        res.json({ tickets: result.rows, error: false})
-    }).catch(result => {
-        res.json({ result: result, error: "something went wrong during the changing of id's"})
-    })
-
+    var values = [req.params.goalid]
+    params.map(p => values.push(p))
+    const q = {
+        text: " UPDATE tickets SET goalid = $1 WHERE id IN (" + todo + ") RETURNING * ",
+                values: values
+    }
+    db.pool.query(q).then(result => {res.json({ tickets: result.rows, error: false})
+                  }).catch(result => {res.json({ result: result, error: "something went wrong during the changing of id's"})} )
 })
 
 // gets all the tickets with certain goalId
 router.get('/goal/:goalId', async (req, res) => {
-
-    const q = {
-        text: "SELECT * from tickets where goalid = $1 AND owner = $2",
-        values: [req.params.goalId, token.byToken(req.headers.token).id]
+    const q = { text: "SELECT * from tickets where goalid = $1 AND owner = $2",
+                values: [req.params.goalId, token.byToken(req.headers.token).id]
     }
-
-    db.pool.query(q).then(result => {
-        res.json({ tickets: result.rows, error: false})
-    }).catch(result => {
-        res.json({ result: result, error: "something went wrong during the querying tickets with specific goalid"})
-    })
-
+    db.pool.query(q).then(result => { res.json({ tickets: result.rows, error: false}) })
+                    .catch(result => {res.json({ result: result, error: "something went wrong during the querying tickets with specific goalid"}) })
 })
 
 
